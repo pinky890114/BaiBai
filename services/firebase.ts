@@ -51,15 +51,19 @@ if (isFirebaseConfigured) {
   try {
     const app = initializeApp(firebaseConfig);
     
-    // 初始化 Firestore
+    // 初始化 Firestore (簡化邏輯，使用標準 getFirestore)
     if (DATABASE_ID && DATABASE_ID !== "(default)") {
         console.log(`正在連線至具名資料庫: ${DATABASE_ID}`);
-        // 使用 initializeFirestore 強制指定 databaseId，避免 (default) 不存在的錯誤
         try {
-            db = initializeFirestore(app, {}, DATABASE_ID);
-        } catch (e) {
-            // 如果重複初始化，退回使用 getFirestore
             db = getFirestore(app, DATABASE_ID);
+        } catch (e) {
+            console.warn("getFirestore 初始化失敗，嘗試 initializeFirestore", e);
+            // 備用方案：如果 getFirestore 失敗，嘗試 initializeFirestore
+            try {
+                db = initializeFirestore(app, {}, DATABASE_ID);
+            } catch (initError) {
+                console.error("Database 初始化完全失敗", initError);
+            }
         }
     } else {
         db = getFirestore(app);
@@ -122,9 +126,15 @@ const getLocalCommissions = (): Commission[] => {
     }
 };
 
+// 安全的 LocalStorage 寫入 (防止 QuotaExceededError)
 const saveLocalCommissions = (data: Commission[]) => {
-    localStorage.setItem(STORAGE_KEY_COMMISSIONS, JSON.stringify(data));
-    commissionListeners.forEach(cb => cb(data));
+    try {
+        localStorage.setItem(STORAGE_KEY_COMMISSIONS, JSON.stringify(data));
+        commissionListeners.forEach(cb => cb(data));
+    } catch (e) {
+        console.error("❌ LocalStorage 儲存失敗 (可能是空間不足):", e);
+        alert("⚠️ 瀏覽器儲存空間已滿，無法儲存部分資料。建議清除快取或刪除舊圖片。");
+    }
 };
 
 const getLocalSettings = (): GlobalSettings => {
@@ -138,8 +148,12 @@ const getLocalSettings = (): GlobalSettings => {
 };
 
 const saveLocalSettings = (data: GlobalSettings) => {
-    localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(data));
-    settingsListeners.forEach(cb => cb(data));
+    try {
+        localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(data));
+        settingsListeners.forEach(cb => cb(data));
+    } catch (e) {
+        console.error("❌ Settings 儲存失敗:", e);
+    }
 };
 
 // --- Error Handling Helper ---
@@ -151,23 +165,16 @@ const handleFirebaseError = (error: any) => {
     // 只在 console 顯示一次詳細錯誤，避免洗版
     if (!hasLoggedError) {
         console.warn("🔥 無法連線至 Firestore，已切換至本機模式 (Local Mode)。");
-        console.error("詳細錯誤原因:", error);
+        // 忽略 AbortError (通常是網路中斷或組件卸載)
+        if (error?.name !== 'AbortError' && error?.code !== 'aborted') {
+            console.error("詳細錯誤原因:", error);
+        }
         
         if (error.code === 'not-found') {
              console.warn(`💡 找不到資料庫。請確認 services/firebase.ts 中的 DATABASE_ID 是否正確。\n目前設定為: "${DATABASE_ID}"`);
         } else if (error.code === 'permission-denied') {
              console.error("🛑 權限不足 (Permission Denied)");
-             console.warn("💡 請前往 Firebase Console -> Firestore Database -> Rules (規則) 分頁，將規則改為：");
-             console.warn(`
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
-    }
-  }
-}
-             `);
+             console.warn("💡 請確認 Firebase Rules 是否已設定為允許讀寫。");
         }
         hasLoggedError = true;
     }
@@ -189,7 +196,8 @@ export const uploadCommissionImage = async (file: File): Promise<string> => {
             reader.onload = (e) => {
                 img.src = e.target?.result as string;
             };
-            reader.onerror = reject;
+            reader.onerror = (e) => reject(new Error("FileReader failed"));
+            reader.onabort = () => reject(new Error("FileReader aborted"));
 
             img.onload = () => {
                 const canvas = document.createElement('canvas');
@@ -231,6 +239,9 @@ export const uploadCommissionImage = async (file: File): Promise<string> => {
                     }
                 }, 'image/jpeg', 0.7);
             };
+            
+            // 增加圖片載入錯誤處理
+            img.onerror = (e) => reject(new Error("Image load failed"));
         });
     };
 
@@ -246,36 +257,43 @@ export const uploadCommissionImage = async (file: File): Promise<string> => {
 
     try {
         console.log(`Original size: ${(file.size / 1024).toFixed(2)} KB`);
-        const compressedBlob = await compressImage(file);
-        console.log(`Compressed size: ${(compressedBlob.size / 1024).toFixed(2)} KB`);
+        // 嘗試壓縮
+        let blobToUpload: Blob;
+        try {
+            blobToUpload = await compressImage(file);
+            console.log(`Compressed size: ${(blobToUpload.size / 1024).toFixed(2)} KB`);
+        } catch (compressError) {
+            console.warn("Image compression failed, using original file:", compressError);
+            blobToUpload = file; // 壓縮失敗則使用原圖
+        }
 
         if (storage) {
             try {
                 // 使用壓縮後的 Blob 上傳
-                const fileName = `commission_images/${Date.now()}_compressed.jpg`;
+                const fileName = `commission_images/${Date.now()}_img.jpg`;
                 const storageRef = ref(storage, fileName);
                 
                 // uploadBytes 接受 Blob
-                const snapshot = await uploadBytes(storageRef, compressedBlob);
+                const snapshot = await uploadBytes(storageRef, blobToUpload);
                 const downloadURL = await getDownloadURL(snapshot.ref);
                 return downloadURL;
             } catch (error) {
-                console.error("☁️ Storage 上傳失敗，嘗試轉為 Base64 本地儲存:", error);
-                // 上傳失敗時，存壓縮過的 Base64 到 LocalStorage
-                return await blobToBase64(compressedBlob);
+                console.error("☁️ Storage 上傳失敗 (可能網路不穩)，轉為 Base64 本地儲存:", error);
+                // 上傳失敗時，存 Base64 到 LocalStorage
+                return await blobToBase64(blobToUpload);
             }
         } else {
-            // 沒有 Storage 時，存壓縮過的 Base64 到 LocalStorage
-            return await blobToBase64(compressedBlob);
+            // 沒有 Storage 時，存 Base64 到 LocalStorage
+            return await blobToBase64(blobToUpload);
         }
     } catch (e) {
-        console.error("Image processing error:", e);
-        // 如果壓縮過程失敗，回退到原始檔案的 Base64
-        return await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(file);
-        });
+        console.error("Critical Image processing error:", e);
+        // 如果連壓縮或轉檔都完全失敗，嘗試回傳原始檔案的 Base64
+        try {
+             return await blobToBase64(file);
+        } catch (finalError) {
+             return ""; // 真的沒辦法了
+        }
     }
 };
 
