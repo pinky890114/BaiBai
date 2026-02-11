@@ -1,12 +1,22 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Commission, CommissionStatus, ThemeMode, CommissionType } from './types';
-import { MOCK_COMMISSIONS, DEFAULT_COMMISSION_TYPES } from './constants';
+import { DEFAULT_COMMISSION_TYPES } from './constants';
 import { CommissionCard } from './components/CommissionCard';
 import { AddCommissionForm } from './components/AddCommissionForm';
 import { ClientRequestForm } from './components/ClientRequestForm';
 import { EditCommissionForm } from './components/EditCommissionForm';
 import { TypeManager } from './components/TypeManager';
-import { Search, Sparkles, Lock, Unlock, Palette, Key, X, ChevronRight, Home, PenTool, LayoutDashboard, Power, Ban, DollarSign, FileText } from 'lucide-react';
+import { 
+  subscribeToCommissions, 
+  subscribeToSettings, 
+  addCommissionToCloud, 
+  updateCommissionInCloud, 
+  deleteCommissionFromCloud, 
+  updateGlobalSettings,
+  subscribeToConnectionStatus,
+  ConnectionStatus
+} from './services/firebase';
+import { Search, Sparkles, Lock, Unlock, Palette, Key, X, ChevronRight, Home, PenTool, LayoutDashboard, Power, Ban, DollarSign, FileText, Cloud, CloudOff, Wifi, WifiOff } from 'lucide-react';
 
 const ARTIST_NAME = '百百嵂';
 const ADMIN_PASSWORD = 'X90058';
@@ -35,68 +45,41 @@ const App: React.FC = () => {
   const [passwordInput, setPasswordInput] = useState('');
   const [authError, setAuthError] = useState(false);
   
-  // Data Loading State
-  const [isLoaded, setIsLoaded] = useState(false);
+  // Connection State
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize Data
+  // Initialize Data (Subscribe to Firebase)
   useEffect(() => {
-    // Load Commissions
-    const storedCommissions = localStorage.getItem('arttrack_commissions_zh_v1');
-    if (storedCommissions) {
-      try {
-        let parsed = JSON.parse(storedCommissions);
-        if (Array.isArray(parsed)) {
-            parsed = parsed.map((c: any) => ({
-                ...c,
-                artistId: ARTIST_NAME
-            }));
-            setCommissions(parsed);
-        } else {
-            setCommissions(MOCK_COMMISSIONS);
-        }
-      } catch (e) {
-        setCommissions(MOCK_COMMISSIONS);
-      }
-    } else {
-      setCommissions(MOCK_COMMISSIONS);
-    }
+    // 1. Subscribe to Commissions
+    const unsubscribeCommissions = subscribeToCommissions((data) => {
+      setCommissions(data);
+    });
 
-    // Load Types
-    const storedTypes = localStorage.getItem('arttrack_types_v1');
-    if (storedTypes) {
-        try {
-            const parsedTypes = JSON.parse(storedTypes);
-            if (Array.isArray(parsedTypes) && parsedTypes.length > 0) {
-                // Migration logic: if old types were just strings
-                if (typeof parsedTypes[0] === 'string') {
-                    const migrated = (parsedTypes as unknown as string[]).map(name => {
-                         const def = DEFAULT_COMMISSION_TYPES.find(d => d.name === name);
-                         return { name, price: def ? def.price : 0 };
-                    });
-                    setCommissionTypes(migrated);
-                } else {
-                    setCommissionTypes(parsedTypes);
-                }
-            } else {
-                setCommissionTypes(DEFAULT_COMMISSION_TYPES);
-            }
-        } catch(e) {
+    // 2. Subscribe to Settings (Types & Open Status)
+    const unsubscribeSettings = subscribeToSettings((settings) => {
+      if (settings) {
+        setIsCommissionsOpen(settings.isOpen);
+        if (settings.types && settings.types.length > 0) {
+            setCommissionTypes(settings.types);
+        } else {
             setCommissionTypes(DEFAULT_COMMISSION_TYPES);
         }
-    } else {
-        setCommissionTypes(DEFAULT_COMMISSION_TYPES);
-    }
+      }
+    });
 
-    // Load Commission Status (Open/Closed)
-    const storedStatus = localStorage.getItem('arttrack_status_v1');
-    if (storedStatus) {
-        setIsCommissionsOpen(storedStatus === 'true');
-    }
+    // 3. Subscribe to Connection Status
+    const unsubscribeStatus = subscribeToConnectionStatus((status) => {
+        setConnectionStatus(status);
+    });
 
-    setIsLoaded(true);
+    return () => {
+      unsubscribeCommissions();
+      unsubscribeSettings();
+      unsubscribeStatus();
+    };
   }, []);
 
   // Auto-focus password input when modal opens
@@ -106,24 +89,20 @@ const App: React.FC = () => {
     }
   }, [showAuthModal]);
 
-  // Persistence
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem('arttrack_commissions_zh_v1', JSON.stringify(commissions));
-      localStorage.setItem('arttrack_types_v1', JSON.stringify(commissionTypes));
-      localStorage.setItem('arttrack_status_v1', String(isCommissionsOpen));
-    }
-  }, [commissions, commissionTypes, isCommissionsOpen, isLoaded]);
-
-  // Handlers
+  // Handlers - Now calling Firebase Service
   const handleUpdateStatus = (id: string, newStatus: CommissionStatus) => {
-    setCommissions(prev => prev.map(c => 
-      c.id === id ? { ...c, status: newStatus, lastUpdated: new Date().toISOString().split('T')[0] } : c
-    ));
+    const commission = commissions.find(c => c.id === id);
+    if (commission) {
+        updateCommissionInCloud({
+            ...commission,
+            status: newStatus,
+            lastUpdated: new Date().toISOString().split('T')[0]
+        });
+    }
   };
 
   const handleDelete = (id: string) => {
-    setCommissions(prev => prev.filter(c => c.id !== id));
+    deleteCommissionFromCloud(id);
   };
 
   const handleAdd = (newCommission: Commission) => {
@@ -131,25 +110,35 @@ const App: React.FC = () => {
         ...newCommission,
         artistId: ARTIST_NAME
     };
-    setCommissions(prev => [commissionToAdd, ...prev]);
+    addCommissionToCloud(commissionToAdd);
     setIsAdding(false);
   };
 
-  // Special handler for public requests (does not close admin modal, but redirects)
+  // Special handler for public requests
   const handleClientRequestSubmit = (newCommission: Commission) => {
      const commissionToAdd = {
         ...newCommission,
         artistId: ARTIST_NAME
     };
-    setCommissions(prev => [commissionToAdd, ...prev]);
-    // Stay on success screen handled by the form component, or we could redirect
+    addCommissionToCloud(commissionToAdd);
   };
 
   const handleEdit = (updatedCommission: Commission) => {
-    setCommissions(prev => prev.map(c => 
-        c.id === updatedCommission.id ? updatedCommission : c
-    ));
+    updateCommissionInCloud(updatedCommission);
     setEditingCommission(null);
+  };
+
+  const handleUpdateTypes = (newTypes: CommissionType[]) => {
+      setCommissionTypes(newTypes);
+      updateGlobalSettings({ types: newTypes });
+  };
+
+  const toggleCommissionStatus = () => {
+      if (viewMode === 'admin') {
+          const newState = !isCommissionsOpen;
+          setIsCommissionsOpen(newState); // Optimistic
+          updateGlobalSettings({ isOpen: newState });
+      }
   };
 
   const handleModeSwitchRequest = () => {
@@ -171,7 +160,6 @@ const App: React.FC = () => {
         setCurrentPage('tracking'); // Redirect to dashboard immediately after login
     } else {
         setAuthError(true);
-        // Use ref for cleaner React approach, fallback to getElementById if ref isn't attached for some reason
         const input = passwordInputRef.current || document.getElementById('password-input');
         if (input) {
             input.classList.remove('animate-shake');
@@ -179,12 +167,6 @@ const App: React.FC = () => {
             input.classList.add('animate-shake');
         }
     }
-  };
-
-  const toggleCommissionStatus = () => {
-      if (viewMode === 'admin') {
-          setIsCommissionsOpen(!isCommissionsOpen);
-      }
   };
 
   // Filter Logic
@@ -238,6 +220,32 @@ const App: React.FC = () => {
     }
   }, [commissions]);
 
+  // Render Status Badge
+  const renderStatusBadge = () => {
+      if (connectionStatus === 'connected') {
+          return (
+            <span className="flex items-center gap-1.5 text-green-600 text-[10px] font-bold bg-green-50 px-3 py-1 rounded-full border border-green-100 shadow-sm animate-in fade-in">
+                <Cloud size={12} className="text-green-500" /> 
+                Cloud Synced
+            </span>
+          );
+      } else if (connectionStatus === 'offline') {
+          return (
+            <span className="flex items-center gap-1.5 text-orange-500 text-[10px] font-bold bg-orange-50 px-3 py-1 rounded-full border border-orange-100 shadow-sm animate-in fade-in" title="無法連線到資料庫，目前使用本機模式">
+                <WifiOff size={12} /> 
+                Local Mode
+            </span>
+          );
+      } else {
+          return (
+            <span className="flex items-center gap-1.5 text-stone-400 text-[10px] font-bold bg-stone-100 px-3 py-1 rounded-full border border-stone-200 animate-pulse">
+                <Wifi size={12} /> 
+                Connecting...
+            </span>
+          );
+      }
+  };
+
   // --- Render Sections ---
 
   const renderHome = () => (
@@ -254,7 +262,7 @@ const App: React.FC = () => {
             <h1 className="text-4xl md:text-5xl font-black text-stone-700 tracking-tight mb-4">
                 百百嵂的委託小舖
             </h1>
-            <p className="text-stone-400 text-lg font-medium">
+            <p className="text-stone-400 text-lg font-medium flex items-center justify-center gap-2">
                 歡迎光臨！請選擇您需要的服務 🎨
             </p>
         </div>
@@ -270,7 +278,7 @@ const App: React.FC = () => {
                 }}
                 disabled={!isCommissionsOpen}
                 className={`group rounded-[2.5rem] p-8 text-left transition-all duration-300 
-                    ${isCommissionsOpen 
+                    ${isCommissionsOpen
                         ? 'bg-[#ffa9c2] hover:bg-[#ff94b3] text-white hover:-translate-y-2 hover:shadow-xl hover:shadow-pink-200 cursor-pointer' 
                         : 'bg-stone-200 text-stone-400 cursor-not-allowed border-4 border-stone-100'
                     }`}
@@ -299,14 +307,15 @@ const App: React.FC = () => {
                 <div className="bg-pink-50 w-16 h-16 rounded-2xl flex items-center justify-center text-[#ff5c8d] mb-6 group-hover:scale-110 transition-transform">
                     <Search size={32} />
                 </div>
-                <h2 className="text-2xl font-bold text-stone-700 mb-2">委託進度追蹤</h2>
+                <h2 className="text-2xl font-bold text-stone-700 mb-2">委託進度查詢</h2>
                 <p className="text-stone-400 font-medium">已經有委託了嗎？<br/>輸入 ID 查詢目前的繪製進度。</p>
             </button>
         </div>
         
         <div className="mt-12 flex flex-col items-center gap-4 relative z-10">
-            <div className="text-stone-300 text-sm font-bold">
-                © 2026 CommissionTrack
+            <div className="text-stone-300 text-sm font-bold flex items-center gap-2">
+                © 2026 CommissionTrack 
+                {renderStatusBadge()}
             </div>
             
             <button 
@@ -519,6 +528,17 @@ const App: React.FC = () => {
             />
         )}
 
+        {/* Edit Form (Admin Only) */}
+        {viewMode === 'admin' && editingCommission && (
+            <EditCommissionForm 
+                commission={editingCommission} 
+                onSave={handleEdit} 
+                onCancel={() => setEditingCommission(null)} 
+                availableTypes={commissionTypes}
+                onManageTypes={() => setShowTypeManager(true)}
+            />
+        )}
+
         {/* List */}
         <div className="space-y-6 pb-20">
             {!shouldShowList ? (
@@ -577,80 +597,67 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="bg-[#fffafb] min-h-screen font-sans text-stone-600 selection:bg-pink-100 selection:text-pink-500">
+    <div className="bg-[#fffafb] min-h-screen text-stone-600 font-sans selection:bg-pink-100 selection:text-pink-600">
       {currentPage === 'home' && renderHome()}
+      {currentPage === 'tracking' && renderTracking()}
       {currentPage === 'terms' && renderTerms()}
       {currentPage === 'request' && renderRequest()}
-      {currentPage === 'tracking' && renderTracking()}
 
       {/* Auth Modal */}
       {showAuthModal && (
-        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl border-2 border-pink-100 animate-in zoom-in-95 duration-200 relative overflow-hidden">
-                <button 
-                    onClick={() => setShowAuthModal(false)} 
-                    className="absolute top-4 right-4 text-stone-300 hover:text-stone-500 transition-colors"
-                >
-                    <X size={20} />
-                </button>
-                
-                <div className="text-center mb-6">
-                    <div className="w-16 h-16 bg-pink-50 text-[#ff5c8d] rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <Lock size={32} />
-                    </div>
-                    <h3 className="text-xl font-bold text-stone-700">管理員登入</h3>
-                    <p className="text-stone-400 text-sm mt-1">請輸入通行密碼以進入管理模式</p>
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl border-2 border-pink-100 animate-in zoom-in-95 duration-200">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold text-stone-700 flex items-center gap-2">
+                        <Key className="text-[#ff5c8d]" size={20} />
+                        管理員登入
+                    </h3>
+                    <button onClick={() => setShowAuthModal(false)} className="text-stone-400 hover:text-stone-600">
+                        <X size={20} />
+                    </button>
                 </div>
-
-                <form onSubmit={handleAuthSubmit} className="space-y-4">
-                    <div className="relative">
-                        <Key className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
+                
+                <form onSubmit={handleAuthSubmit}>
+                    <div className="mb-6">
+                        <label className="block text-xs font-bold text-stone-400 mb-2 ml-1">請輸入密碼</label>
                         <input 
                             ref={passwordInputRef}
-                            type="password" 
                             id="password-input"
-                            className={`w-full bg-stone-50 border-2 ${authError ? 'border-red-300 bg-red-50' : 'border-stone-200'} rounded-2xl pl-11 pr-4 py-3 text-stone-700 focus:ring-4 focus:ring-[#ffa9c2]/20 focus:border-[#ffa9c2] focus:outline-none font-bold transition-all placeholder:text-stone-300`}
-                            placeholder="Password"
+                            type="password" 
+                            className={`w-full bg-stone-50 border-2 rounded-xl px-4 py-3 text-stone-700 focus:outline-none transition-all font-bold tracking-widest
+                                ${authError 
+                                    ? 'border-red-300 focus:border-red-500 bg-red-50 text-red-500 placeholder-red-300' 
+                                    : 'border-stone-200 focus:border-[#ffa9c2] focus:ring-4 focus:ring-[#ffa9c2]/20'
+                                }`}
                             value={passwordInput}
                             onChange={(e) => {
                                 setPasswordInput(e.target.value);
                                 setAuthError(false);
                             }}
+                            placeholder="••••••"
                         />
+                        {authError && (
+                            <p className="text-red-500 text-xs font-bold mt-2 ml-1 animate-in slide-in-from-left-2">密碼錯誤，請再試一次。</p>
+                        )}
                     </div>
-                    {authError && (
-                        <p className="text-xs text-red-400 font-bold text-center animate-in slide-in-from-top-1">
-                            密碼錯誤，請再試一次。
-                        </p>
-                    )}
                     <button 
                         type="submit"
-                        className="w-full bg-[#ffa9c2] hover:bg-[#ff94b3] text-white font-bold py-3 rounded-2xl transition-all shadow-lg shadow-pink-200 hover:-translate-y-0.5 active:scale-95 flex items-center justify-center gap-2"
+                        className="w-full bg-[#ffa9c2] hover:bg-[#ff94b3] text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-pink-200 hover:-translate-y-0.5 active:scale-95"
                     >
-                        確認登入 <ChevronRight size={16} />
+                        確認登入
                     </button>
                 </form>
             </div>
         </div>
       )}
 
-      {/* Modals */}
-      {viewMode === 'admin' && showTypeManager && (
+      {/* Type Manager Modal */}
+      {showTypeManager && (
           <TypeManager 
             types={commissionTypes}
-            onUpdateTypes={setCommissionTypes}
+            onUpdateTypes={handleUpdateTypes}
             onClose={() => setShowTypeManager(false)}
           />
-      )}
-
-      {viewMode === 'admin' && editingCommission && (
-        <EditCommissionForm 
-            commission={editingCommission}
-            onSave={handleEdit}
-            onCancel={() => setEditingCommission(null)}
-            availableTypes={commissionTypes}
-            onManageTypes={() => setShowTypeManager(true)}
-        />
       )}
     </div>
   );

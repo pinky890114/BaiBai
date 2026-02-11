@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Commission, CommissionStatus, CommissionType } from '../types';
-import { Send, X, Link as LinkIcon, Upload, Trash2, Sparkles, CheckCircle, Calculator } from 'lucide-react';
+import { Send, X, Link as LinkIcon, Upload, Trash2, Sparkles, CheckCircle, Calculator, Loader2 } from 'lucide-react';
+import { uploadCommissionImage } from '../services/firebase';
 
 interface ClientRequestFormProps {
   onSubmit: (c: Commission) => void;
@@ -21,6 +22,9 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
     thumbnailUrl: ''
   });
 
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Find price based on selected type
   const estimatedPrice = useMemo(() => {
     const typeObj = availableTypes.find(t => t.name === formData.type);
@@ -38,10 +42,13 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-        if (file.size > 800 * 1024) {
-            alert("圖片檔案過大 (超過 800KB)。建議使用外部連結。");
+        if (file.size > 5 * 1024 * 1024) {
+            alert("圖片檔案過大 (超過 5MB)。請壓縮後再上傳。");
             return;
         }
+        
+        setSelectedFile(file);
+
         const reader = new FileReader();
         reader.onloadend = () => {
             setFormData(prev => ({ ...prev, thumbnailUrl: reader.result as string }));
@@ -50,8 +57,22 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    let finalImageUrl = formData.thumbnailUrl;
+
+    if (selectedFile) {
+        try {
+            finalImageUrl = await uploadCommissionImage(selectedFile);
+        } catch (error) {
+            alert("圖片上傳失敗，請重試");
+            setIsSubmitting(false);
+            return;
+        }
+    }
 
     const newId = `c-${Date.now().toString().slice(-6)}`; // Simple shorter ID
     setGeneratedId(newId);
@@ -67,11 +88,12 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
       status: CommissionStatus.QUEUE,
       dateAdded: new Date().toISOString().split('T')[0],
       lastUpdated: new Date().toISOString().split('T')[0],
-      thumbnailUrl: formData.thumbnailUrl || ''
+      thumbnailUrl: finalImageUrl || ''
     };
     
     onSubmit(newCommission);
     setIsSubmitted(true);
+    setIsSubmitting(false);
   };
 
   if (isSubmitted) {
@@ -107,7 +129,15 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
   }
 
   return (
-    <div className="bg-white border-2 border-pink-100 rounded-3xl p-8 shadow-xl shadow-pink-50/50 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4">
+    <div className="bg-white border-2 border-pink-100 rounded-3xl p-8 shadow-xl shadow-pink-50/50 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 relative">
+      
+      {isSubmitting && (
+          <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-50 rounded-3xl flex items-center justify-center flex-col gap-3">
+              <Loader2 className="animate-spin text-[#ff5c8d]" size={40} />
+              <span className="font-bold text-[#ff5c8d]">處理中...</span>
+          </div>
+      )}
+
       <div className="flex justify-between items-center mb-8 pb-4 border-b-2 border-stone-100">
         <h3 className="text-xl font-bold text-[#ff5c8d] flex items-center gap-3">
             <div className="bg-pink-100 p-2 rounded-xl text-[#ff5c8d]">
@@ -175,7 +205,10 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
                     <img src={formData.thumbnailUrl} alt="Preview" className="w-full h-full object-cover" />
                     <button 
                         type="button"
-                        onClick={() => setFormData({...formData, thumbnailUrl: ''})}
+                        onClick={() => {
+                            setFormData({...formData, thumbnailUrl: ''});
+                            setSelectedFile(null);
+                        }}
                         className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
                     >
                         <Trash2 size={16} />
@@ -189,7 +222,7 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
                         className="w-full h-20 border-2 border-dashed border-pink-200 rounded-2xl flex flex-col items-center justify-center text-pink-300 hover:text-pink-400 hover:border-pink-300 hover:bg-pink-50 transition-all cursor-pointer gap-1"
                     >
                         <Upload size={20} />
-                        <span className="text-xs font-bold">點擊上傳 (Max 800KB)</span>
+                        <span className="text-xs font-bold">點擊上傳 (Max 5MB)</span>
                         <input 
                             ref={fileInputRef}
                             type="file" 
@@ -238,9 +271,10 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
         <div className="md:col-span-2 pt-4 flex justify-end border-t border-stone-100 mt-2">
             <button 
                 type="submit"
-                className="bg-[#ffa9c2] hover:bg-[#ff94b3] text-white font-bold py-3 px-8 rounded-full transition-all shadow-lg shadow-pink-200 hover:-translate-y-0.5 active:scale-95 text-sm flex items-center gap-2"
+                disabled={isSubmitting}
+                className="bg-[#ffa9c2] hover:bg-[#ff94b3] text-white font-bold py-3 px-8 rounded-full transition-all shadow-lg shadow-pink-200 hover:-translate-y-0.5 active:scale-95 text-sm flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
-                <Send size={18} /> 送出委託申請
+                <Send size={18} /> {isSubmitting ? '處理中...' : '送出委託申請'}
             </button>
         </div>
       </form>

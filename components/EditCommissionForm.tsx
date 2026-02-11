@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Commission, CommissionStatus, CommissionType } from '../types';
-import { Save, X, Link as LinkIcon, Upload, Trash2, Settings } from 'lucide-react';
+import { Save, X, Link as LinkIcon, Upload, Trash2, Settings, Loader2 } from 'lucide-react';
+import { uploadCommissionImage } from '../services/firebase';
 
 interface EditCommissionFormProps {
   commission: Commission;
@@ -12,6 +13,8 @@ interface EditCommissionFormProps {
 
 export const EditCommissionForm: React.FC<EditCommissionFormProps> = ({ commission, onSave, onCancel, availableTypes, onManageTypes }) => {
   const [formData, setFormData] = useState<Commission>(commission);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -20,25 +23,23 @@ export const EditCommissionForm: React.FC<EditCommissionFormProps> = ({ commissi
 
   const handleTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
       const newTypeName = e.target.value;
-      const typeObj = availableTypes.find(t => t.name === newTypeName);
-      // Optional: Auto update price on edit? Maybe not, as the agreed price might differ.
-      // Let's just update the type.
       setFormData(prev => ({ 
           ...prev, 
           type: newTypeName,
-          // We generally don't auto-update price on EDIT to avoid overriding agreed prices accidentally
-          // price: typeObj ? typeObj.price : prev.price 
       }));
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-        if (file.size > 800 * 1024) {
-            alert("圖片檔案過大 (超過 800KB)，可能導致儲存失敗。\n建議壓縮圖片或使用外部連結。");
+        if (file.size > 5 * 1024 * 1024) {
+            alert("圖片檔案過大 (超過 5MB)，請壓縮後再上傳。");
             return;
         }
 
+        setSelectedFile(file);
+
+        // Preview
         const reader = new FileReader();
         reader.onloadend = () => {
             setFormData(prev => ({ ...prev, thumbnailUrl: reader.result as string }));
@@ -47,18 +48,42 @@ export const EditCommissionForm: React.FC<EditCommissionFormProps> = ({ commissi
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
+
+    setIsSubmitting(true);
+    let finalImageUrl = formData.thumbnailUrl;
+
+    if (selectedFile) {
+        try {
+            finalImageUrl = await uploadCommissionImage(selectedFile);
+        } catch (error) {
+            alert("圖片上傳失敗，請重試");
+            setIsSubmitting(false);
+            return;
+        }
+    }
+
     onSave({
         ...formData,
+        thumbnailUrl: finalImageUrl || '',
         lastUpdated: new Date().toISOString().split('T')[0]
     });
+    // Parent handles closing, so we don't strictly need to setIsSubmitting(false) here, but good practice.
   };
 
   return (
     <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white border-2 border-stone-100 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200">
+      <div className="bg-white border-2 border-stone-100 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200 relative">
         
+        {isSubmitting && (
+            <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-50 rounded-3xl flex items-center justify-center flex-col gap-3">
+                <Loader2 className="animate-spin text-[#ff5c8d]" size={40} />
+                <span className="font-bold text-[#ff5c8d]">處理中...</span>
+            </div>
+        )}
+
         <div className="sticky top-0 bg-white/95 backdrop-blur-md px-8 py-5 border-b-2 border-stone-100 flex justify-between items-center z-10">
           <h3 className="text-xl font-bold text-stone-700 flex items-center gap-2">
              編輯委託單
@@ -140,7 +165,10 @@ export const EditCommissionForm: React.FC<EditCommissionFormProps> = ({ commissi
                     <img src={formData.thumbnailUrl} alt="Preview" className="w-full h-full object-cover" />
                     <button 
                         type="button"
-                        onClick={() => setFormData({...formData, thumbnailUrl: ''})}
+                        onClick={() => {
+                            setFormData({...formData, thumbnailUrl: ''});
+                            setSelectedFile(null);
+                        }}
                         className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
                     >
                         <Trash2 size={16} />
@@ -154,7 +182,7 @@ export const EditCommissionForm: React.FC<EditCommissionFormProps> = ({ commissi
                         className="w-full h-20 border-2 border-dashed border-pink-200 rounded-2xl flex flex-col items-center justify-center text-pink-300 hover:text-pink-400 hover:border-pink-300 hover:bg-pink-50 transition-all cursor-pointer gap-1"
                     >
                         <Upload size={20} />
-                        <span className="text-xs font-bold">上傳圖片 (Max 800KB)</span>
+                        <span className="text-xs font-bold">上傳圖片 (Max 5MB)</span>
                         <input 
                             ref={fileInputRef}
                             type="file" 
@@ -217,9 +245,10 @@ export const EditCommissionForm: React.FC<EditCommissionFormProps> = ({ commissi
               </button>
               <button 
                   type="submit"
-                  className="bg-[#ffa9c2] hover:bg-[#ff94b3] text-white font-bold py-2.5 px-8 rounded-full transition-all shadow-lg shadow-pink-200 hover:-translate-y-0.5 active:scale-95 text-sm flex items-center gap-2"
+                  disabled={isSubmitting}
+                  className="bg-[#ffa9c2] hover:bg-[#ff94b3] text-white font-bold py-2.5 px-8 rounded-full transition-all shadow-lg shadow-pink-200 hover:-translate-y-0.5 active:scale-95 text-sm flex items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
               >
-                  <Save size={16} /> 儲存變更
+                  <Save size={16} /> {isSubmitting ? '儲存中...' : '儲存變更'}
               </button>
           </div>
         </form>
