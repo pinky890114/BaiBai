@@ -52,6 +52,7 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
     const newId = `c-${Date.now().toString().slice(-6)}`; // Simple shorter ID
     setGeneratedId(newId);
 
@@ -119,8 +120,8 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-5">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-8">
+        <div className="space-y-5 md:col-span-1">
           <div>
             <label className="block text-xs font-bold text-stone-500 mb-2 ml-1">您的暱稱 / 稱呼</label>
             <input 
@@ -164,7 +165,7 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
           </div>
         </div>
 
-        <div className="space-y-5">
+        <div className="space-y-5 md:col-span-1">
           {/* Image Upload Section */}
           <div>
              <label className="block text-xs font-bold text-stone-500 mb-2 ml-1">參考圖片 (角色設定/構圖參考)</label>
