@@ -19,6 +19,7 @@ export interface Commission {
   id: string;
   artistId: string;
   clientName: string;
+  contactInfo?: string; // Added contact info
   title: string;
   description: string;
   type: string;

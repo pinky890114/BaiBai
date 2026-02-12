@@ -16,7 +16,7 @@ import {
   subscribeToConnectionStatus,
   ConnectionStatus
 } from './services/firebase';
-import { Search, Sparkles, Lock, Unlock, Palette, Key, X, ChevronRight, Home, PenTool, LayoutDashboard, Power, Ban, DollarSign, FileText, Cloud, CloudOff, Wifi, WifiOff, Facebook, Instagram, Mail } from 'lucide-react';
+import { Search, Sparkles, Lock, Unlock, Palette, Key, X, ChevronRight, Home, PenTool, LayoutDashboard, Power, Ban, DollarSign, FileText, Cloud, CloudOff, Wifi, WifiOff, Facebook, Instagram } from 'lucide-react';
 
 const ARTIST_NAME = '百百嵂';
 const ADMIN_PASSWORD = 'X90058';
@@ -343,19 +343,6 @@ const App: React.FC = () => {
                     Instagram
                 </a>
             </div>
-
-            {/* Mail */}
-            <a
-                href="mailto:123456@gmail.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 flex items-center gap-2 text-stone-500 hover:text-[#ff5c8d] bg-white border-2 border-pink-100 hover:border-pink-200 px-6 py-2.5 rounded-full font-bold transition-all hover:shadow-md group w-full md:w-auto justify-center"
-            >
-                <div className="bg-stone-100 text-stone-400 group-hover:bg-pink-100 group-hover:text-[#ff5c8d] p-1.5 rounded-full transition-colors">
-                    <Mail size={16} />
-                </div>
-                123456@gmail.com
-            </a>
         </div>
         
         <div className="mt-12 flex flex-col items-center gap-4 relative z-10">
@@ -455,13 +442,15 @@ const App: React.FC = () => {
       <div className="pt-8 px-6 max-w-5xl mx-auto w-full">
          <div className="flex items-center justify-between mb-8 text-[#ff5c8d] opacity-90">
             <div className="flex items-center gap-3">
-                 <button 
+                 <button
                     onClick={() => setCurrentPage('home')}
-                    className="bg-white p-2 rounded-full shadow-sm text-stone-400 hover:text-[#ff5c8d] transition-colors"
+                    className="flex items-center gap-3 group hover:opacity-80 transition-opacity"
                   >
-                      <Home size={20} />
+                    <div className="bg-white p-2 rounded-full shadow-sm text-stone-400 group-hover:text-[#ff5c8d] transition-colors">
+                        <Home size={20} />
+                    </div>
+                    <h1 className="text-xl font-bold tracking-wide">返回首頁</h1>
                   </button>
-                <h1 className="text-xl font-bold tracking-wide">委託進度管理</h1>
             </div>
             
             {viewMode === 'admin' && (

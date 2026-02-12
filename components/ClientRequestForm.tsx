@@ -16,6 +16,7 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
   
   const [formData, setFormData] = useState<Partial<Commission>>({
     clientName: '',
+    contactInfo: '',
     title: '',
     description: '',
     type: defaultTypeName,
@@ -78,6 +79,7 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
           id: newId,
           artistId: '',
           clientName: formData.clientName || '匿名',
+          contactInfo: formData.contactInfo || '',
           title: formData.title || '未命名委託',
           description: formData.description || '',
           type: formData.type || '其他',
@@ -167,6 +169,17 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
               value={formData.clientName}
               onChange={e => setFormData({...formData, clientName: e.target.value})}
               placeholder="例如: 糰子"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-stone-500 mb-2 ml-1">聯絡方式 (FB/IG/Line)</label>
+            <input 
+              required
+              type="text" 
+              className="w-full bg-stone-50 border-2 border-stone-200 rounded-2xl px-4 py-3 text-sm text-stone-700 focus:ring-4 focus:ring-[#ffa9c2]/20 focus:border-[#ffa9c2] focus:outline-none font-medium transition-all"
+              value={formData.contactInfo}
+              onChange={e => setFormData({...formData, contactInfo: e.target.value})}
+              placeholder="例如: line:123456"
             />
           </div>
           <div>

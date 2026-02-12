@@ -108,6 +108,13 @@ export const CommissionCard: React.FC<CommissionCardProps> = ({
                     <span className="w-1.5 h-1.5 rounded-full bg-[#ff5c8d]"></span>
                     {commission.clientName}
                   </p>
+                  
+                  {/* Admin visible contact info */}
+                  {isAdmin && commission.contactInfo && (
+                      <span className="text-xs text-stone-400 bg-stone-50 px-2 py-0.5 rounded border border-stone-100 ml-1">
+                          {commission.contactInfo}
+                      </span>
+                  )}
               </div>
               <h3 className="text-xl font-bold text-stone-700 leading-tight">{commission.title}</h3>
             </div>
