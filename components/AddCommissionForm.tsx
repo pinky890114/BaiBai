@@ -19,7 +19,7 @@ export const AddCommissionForm: React.FC<AddCommissionFormProps> = ({ onAdd, onC
     description: '',
     type: defaultType?.name || '',
     price: defaultType?.price || 0,
-    status: CommissionStatus.QUEUE,
+    status: CommissionStatus.CONFIRMING,
     thumbnailUrl: ''
   });
 

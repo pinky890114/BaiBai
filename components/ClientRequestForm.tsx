@@ -82,7 +82,7 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
           description: formData.description || '',
           type: formData.type || '其他',
           price: estimatedPrice, // Set the estimated price as initial price
-          status: CommissionStatus.QUEUE,
+          status: CommissionStatus.CONFIRMING,
           dateAdded: new Date().toISOString().split('T')[0],
           lastUpdated: new Date().toISOString().split('T')[0],
           thumbnailUrl: finalImageUrl || ''

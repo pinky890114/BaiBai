@@ -1,6 +1,7 @@
 import { Commission, CommissionStatus, CommissionType } from './types';
 
 export const STATUS_STEPS = [
+  CommissionStatus.CONFIRMING,
   CommissionStatus.QUEUE,
   CommissionStatus.SKETCH,
   CommissionStatus.LINEART,

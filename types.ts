@@ -1,4 +1,5 @@
 export enum CommissionStatus {
+  CONFIRMING = '確認中',
   QUEUE = '排單中',
   SKETCH = '草稿',
   LINEART = '線稿',

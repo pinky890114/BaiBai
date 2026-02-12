@@ -35,6 +35,7 @@ export const CommissionCard: React.FC<CommissionCardProps> = ({
   // Updated Status Colors for Cute Theme (Pill badges)
   const getStatusColor = (status: CommissionStatus) => {
     switch(status) {
+      case CommissionStatus.CONFIRMING: return 'bg-orange-50 text-orange-500 border-orange-200';
       case CommissionStatus.QUEUE: return 'bg-stone-100 text-stone-600 border-stone-200';
       case CommissionStatus.SKETCH: return 'bg-pink-50 text-pink-500 border-pink-200';
       case CommissionStatus.LINEART: return 'bg-rose-50 text-rose-500 border-rose-200';
@@ -177,7 +178,7 @@ export const CommissionCard: React.FC<CommissionCardProps> = ({
                 <button 
                   type="button"
                   onClick={handlePrevStep}
-                  disabled={commission.status === CommissionStatus.QUEUE}
+                  disabled={commission.status === CommissionStatus.CONFIRMING}
                   className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-stone-500 hover:text-stone-700 disabled:opacity-30 hover:bg-stone-100 rounded-full transition-all"
                 >
                   <ChevronLeft size={14} /> 上一步
