@@ -16,7 +16,7 @@ import {
   subscribeToConnectionStatus,
   ConnectionStatus
 } from './services/firebase';
-import { Search, Sparkles, Lock, Unlock, Palette, Key, X, ChevronRight, Home, PenTool, LayoutDashboard, Power, Ban, DollarSign, FileText, Cloud, CloudOff, Wifi, WifiOff } from 'lucide-react';
+import { Search, Sparkles, Lock, Unlock, Palette, Key, X, ChevronRight, Home, PenTool, LayoutDashboard, Power, Ban, DollarSign, FileText, Cloud, CloudOff, Wifi, WifiOff, Facebook, Instagram, Mail } from 'lucide-react';
 
 const ARTIST_NAME = '百百嵂';
 const ADMIN_PASSWORD = 'X90058';
@@ -257,7 +257,7 @@ const App: React.FC = () => {
         <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-[#ffa9c2] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
         <div className="absolute bottom-[-20%] left-[20%] w-80 h-80 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
 
-        <div className="text-center mb-12 relative z-10">
+        <div className="text-center mb-10 relative z-10">
             <div className="bg-white p-4 rounded-3xl shadow-xl shadow-pink-100 inline-block mb-6 transform -rotate-3 hover:rotate-0 transition-transform duration-300">
                  <Sparkles size={48} className="text-[#ff5c8d]" />
             </div>
@@ -269,7 +269,7 @@ const App: React.FC = () => {
             </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl relative z-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl relative z-10 mb-10">
             <button 
                 onClick={() => {
                     if (isCommissionsOpen) {
@@ -310,6 +310,52 @@ const App: React.FC = () => {
                 <h2 className="text-2xl font-bold text-stone-700 mb-2">委託進度查詢</h2>
                 <p className="text-stone-400 font-medium">已經有委託了嗎？<br/>輸入 ID 查詢目前的繪製進度。</p>
             </button>
+        </div>
+
+        {/* Contact Section */}
+        <div className="mt-4 flex flex-col items-center gap-4 relative z-10 w-full max-w-2xl animate-in fade-in slide-in-from-bottom-8 duration-700">
+            <div className="flex items-center gap-3 w-full opacity-60">
+                <div className="h-[2px] bg-stone-200 flex-grow rounded-full"></div>
+                <span className="text-stone-400 font-bold text-xs tracking-widest uppercase">Contact Me</span>
+                <div className="h-[2px] bg-stone-200 flex-grow rounded-full"></div>
+            </div>
+
+            <div className="flex flex-wrap justify-center gap-4 w-full">
+                {/* Facebook */}
+                <a
+                    href="https://www.facebook.com/bai.bai.lu"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-center gap-2 bg-white border-2 border-[#ffa9c2] text-[#ff5c8d] px-6 py-3 rounded-full font-bold shadow-lg shadow-pink-100 hover:-translate-y-1 hover:shadow-xl hover:border-[#1877F2] hover:bg-[#1877F2] hover:text-white hover:shadow-blue-200 transition-all active:scale-95 flex-grow justify-center md:flex-grow-0"
+                >
+                    <Facebook size={20} className="group-hover:text-white transition-colors" />
+                    Facebook
+                </a>
+
+                {/* Instagram */}
+                <a
+                    href="https://www.instagram.com/palette0114?fbclid=IwY2xjawP6bWpleHRuA2FlbQIxMABicmlkETFMaVR2dUZqSHhudFpvZUc3c3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHvTMq2bNc6VDwYCkcfcJ_cVYoOF_BoXbBlOym9QBb5cDXus8W8p0ZKInAHOo_aem_AT8T_rppUmgtczb8Z_vxHg"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex items-center gap-2 bg-white border-2 border-[#ffa9c2] text-[#ff5c8d] px-6 py-3 rounded-full font-bold shadow-lg shadow-pink-100 hover:-translate-y-1 hover:shadow-xl hover:border-transparent hover:bg-gradient-to-tr hover:from-[#f9ce34] hover:via-[#ee2a7b] hover:to-[#6228d7] hover:text-white hover:shadow-pink-300 transition-all active:scale-95 flex-grow justify-center md:flex-grow-0"
+                >
+                    <Instagram size={20} className="group-hover:text-white transition-colors" />
+                    Instagram
+                </a>
+            </div>
+
+            {/* Mail */}
+            <a
+                href="mailto:123456@gmail.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 flex items-center gap-2 text-stone-500 hover:text-[#ff5c8d] bg-white border-2 border-pink-100 hover:border-pink-200 px-6 py-2.5 rounded-full font-bold transition-all hover:shadow-md group w-full md:w-auto justify-center"
+            >
+                <div className="bg-stone-100 text-stone-400 group-hover:bg-pink-100 group-hover:text-[#ff5c8d] p-1.5 rounded-full transition-colors">
+                    <Mail size={16} />
+                </div>
+                123456@gmail.com
+            </a>
         </div>
         
         <div className="mt-12 flex flex-col items-center gap-4 relative z-10">
