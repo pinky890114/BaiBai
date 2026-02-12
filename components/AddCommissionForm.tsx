@@ -4,7 +4,7 @@ import { Plus, X, Link as LinkIcon, Upload, Trash2, Settings, Loader2 } from 'lu
 import { uploadCommissionImage } from '../services/firebase';
 
 interface AddCommissionFormProps {
-  onAdd: (c: Commission) => void;
+  onAdd: (c: Commission) => Promise<void>;
   onCancel: () => void;
   availableTypes: CommissionType[];
   onManageTypes: () => void;
@@ -69,35 +69,36 @@ export const AddCommissionForm: React.FC<AddCommissionFormProps> = ({ onAdd, onC
     if (isSubmitting) return;
 
     setIsSubmitting(true);
-    let finalImageUrl = formData.thumbnailUrl;
-
-    // Upload image if file selected
-    if (selectedFile) {
-        try {
-            finalImageUrl = await uploadCommissionImage(selectedFile);
-        } catch (error) {
-            alert("圖片上傳失敗，請重試");
-            setIsSubmitting(false);
-            return;
-        }
-    }
-
-    const newCommission: Commission = {
-      id: `c-${Date.now()}`,
-      artistId: '', 
-      clientName: formData.clientName || '匿名委託人',
-      title: formData.title || '未命名委託',
-      description: formData.description || '',
-      type: formData.type || '其他',
-      price: formData.price!,
-      status: formData.status as CommissionStatus,
-      dateAdded: new Date().toISOString().split('T')[0],
-      lastUpdated: new Date().toISOString().split('T')[0],
-      thumbnailUrl: finalImageUrl || ''
-    };
     
-    onAdd(newCommission);
-    setIsSubmitting(false);
+    try {
+        let finalImageUrl = formData.thumbnailUrl;
+
+        // Upload image if file selected
+        if (selectedFile) {
+            finalImageUrl = await uploadCommissionImage(selectedFile);
+        }
+
+        const newCommission: Commission = {
+          id: `c-${Date.now()}`,
+          artistId: '', 
+          clientName: formData.clientName || '匿名委託人',
+          title: formData.title || '未命名委託',
+          description: formData.description || '',
+          type: formData.type || '其他',
+          price: formData.price!,
+          status: formData.status as CommissionStatus,
+          dateAdded: new Date().toISOString().split('T')[0],
+          lastUpdated: new Date().toISOString().split('T')[0],
+          thumbnailUrl: finalImageUrl || ''
+        };
+        
+        await onAdd(newCommission);
+    } catch (error) {
+        console.error("Add commission error:", error);
+        alert("新增失敗！請檢查網路連線。" + (error instanceof Error ? error.message : ""));
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   return (

@@ -4,7 +4,7 @@ import { Send, X, Link as LinkIcon, Upload, Trash2, Sparkles, CheckCircle, Calcu
 import { uploadCommissionImage } from '../services/firebase';
 
 interface ClientRequestFormProps {
-  onSubmit: (c: Commission) => void;
+  onSubmit: (c: Commission) => Promise<void>;
   onCancel: () => void;
   availableTypes: CommissionType[];
 }
@@ -62,38 +62,44 @@ export const ClientRequestForm: React.FC<ClientRequestFormProps> = ({ onSubmit, 
     if (isSubmitting) return;
 
     setIsSubmitting(true);
-    let finalImageUrl = formData.thumbnailUrl;
-
-    if (selectedFile) {
-        try {
-            finalImageUrl = await uploadCommissionImage(selectedFile);
-        } catch (error) {
-            alert("圖片上傳失敗，請重試");
-            setIsSubmitting(false);
-            return;
-        }
-    }
-
-    const newId = `c-${Date.now().toString().slice(-6)}`; // Simple shorter ID
-    setGeneratedId(newId);
-
-    const newCommission: Commission = {
-      id: newId,
-      artistId: '',
-      clientName: formData.clientName || '匿名',
-      title: formData.title || '未命名委託',
-      description: formData.description || '',
-      type: formData.type || '其他',
-      price: estimatedPrice, // Set the estimated price as initial price
-      status: CommissionStatus.QUEUE,
-      dateAdded: new Date().toISOString().split('T')[0],
-      lastUpdated: new Date().toISOString().split('T')[0],
-      thumbnailUrl: finalImageUrl || ''
-    };
     
-    onSubmit(newCommission);
-    setIsSubmitted(true);
-    setIsSubmitting(false);
+    try {
+        let finalImageUrl = formData.thumbnailUrl;
+
+        // Upload image if file selected
+        if (selectedFile) {
+            finalImageUrl = await uploadCommissionImage(selectedFile);
+        }
+
+        const newId = `c-${Date.now().toString().slice(-6)}`; // Simple shorter ID
+        setGeneratedId(newId);
+
+        const newCommission: Commission = {
+          id: newId,
+          artistId: '',
+          clientName: formData.clientName || '匿名',
+          title: formData.title || '未命名委託',
+          description: formData.description || '',
+          type: formData.type || '其他',
+          price: estimatedPrice, // Set the estimated price as initial price
+          status: CommissionStatus.QUEUE,
+          dateAdded: new Date().toISOString().split('T')[0],
+          lastUpdated: new Date().toISOString().split('T')[0],
+          thumbnailUrl: finalImageUrl || ''
+        };
+        
+        // Wait for the parent (cloud submission) to finish
+        await onSubmit(newCommission);
+        
+        // Only if successful:
+        setIsSubmitted(true);
+        
+    } catch (error) {
+        console.error("Form submission error:", error);
+        alert("❌ 委託送出失敗！請檢查您的網路連線，或稍後再試。\n\n錯誤原因: " + (error instanceof Error ? error.message : "未知錯誤"));
+    } finally {
+        setIsSubmitting(false);
+    }
   };
 
   if (isSubmitted) {

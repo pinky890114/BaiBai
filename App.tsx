@@ -89,7 +89,7 @@ const App: React.FC = () => {
     }
   }, [showAuthModal]);
 
-  // Handlers - Now calling Firebase Service
+  // Handlers - Now async to allow error propagation
   const handleUpdateStatus = (id: string, newStatus: CommissionStatus) => {
     const commission = commissions.find(c => c.id === id);
     if (commission) {
@@ -97,34 +97,41 @@ const App: React.FC = () => {
             ...commission,
             status: newStatus,
             lastUpdated: new Date().toISOString().split('T')[0]
+        }).catch(err => {
+            console.error("Status update failed:", err);
+            alert("更新狀態失敗，請檢查網路連線");
         });
     }
   };
 
   const handleDelete = (id: string) => {
-    deleteCommissionFromCloud(id);
+    deleteCommissionFromCloud(id).catch(err => {
+        console.error("Delete failed:", err);
+        alert("刪除失敗，請檢查網路連線");
+    });
   };
 
-  const handleAdd = (newCommission: Commission) => {
+  const handleAdd = async (newCommission: Commission) => {
     const commissionToAdd = {
         ...newCommission,
         artistId: ARTIST_NAME
     };
-    addCommissionToCloud(commissionToAdd);
+    // Let the error propagate to the form component
+    await addCommissionToCloud(commissionToAdd);
     setIsAdding(false);
   };
 
-  // Special handler for public requests
-  const handleClientRequestSubmit = (newCommission: Commission) => {
+  const handleClientRequestSubmit = async (newCommission: Commission) => {
      const commissionToAdd = {
         ...newCommission,
         artistId: ARTIST_NAME
     };
-    addCommissionToCloud(commissionToAdd);
+    // Let the error propagate to the form component
+    await addCommissionToCloud(commissionToAdd);
   };
 
-  const handleEdit = (updatedCommission: Commission) => {
-    updateCommissionInCloud(updatedCommission);
+  const handleEdit = async (updatedCommission: Commission) => {
+    await updateCommissionInCloud(updatedCommission);
     setEditingCommission(null);
   };
 
@@ -136,7 +143,7 @@ const App: React.FC = () => {
   const toggleCommissionStatus = () => {
       if (viewMode === 'admin') {
           const newState = !isCommissionsOpen;
-          setIsCommissionsOpen(newState); // Optimistic
+          setIsCommissionsOpen(newState); // Optimistic UI update
           updateGlobalSettings({ isOpen: newState });
       }
   };
@@ -157,13 +164,13 @@ const App: React.FC = () => {
         setViewMode('admin');
         setShowAuthModal(false);
         setPasswordInput('');
-        setCurrentPage('tracking'); // Redirect to dashboard immediately after login
+        setCurrentPage('tracking'); 
     } else {
         setAuthError(true);
         const input = passwordInputRef.current || document.getElementById('password-input');
         if (input) {
             input.classList.remove('animate-shake');
-            void input.offsetWidth; // trigger reflow
+            void input.offsetWidth; 
             input.classList.add('animate-shake');
         }
     }
@@ -172,7 +179,6 @@ const App: React.FC = () => {
   // Filter Logic
   const filteredCommissions = useMemo(() => {
     return commissions.filter(c => {
-      // Search & Filter
       const term = searchTerm.toLowerCase();
       const matchesSearch = 
         c.clientName.toLowerCase().includes(term) || 
@@ -185,7 +191,6 @@ const App: React.FC = () => {
     });
   }, [commissions, searchTerm, statusFilter]);
 
-  // View Logic: Should we show the list?
   const shouldShowList = useMemo(() => {
     if (viewMode === 'admin') return true;
     return searchTerm.trim().length > 0;
@@ -198,10 +203,7 @@ const App: React.FC = () => {
     const currentMonth = now.getMonth();
 
     const monthlyRevenue = commissions.reduce((sum, c) => {
-        // Parse dateAdded (format YYYY-MM-DD)
         const cDate = new Date(c.dateAdded);
-        
-        // Check if the commission was added in the current month and year
         if (!isNaN(cDate.getTime()) && 
             cDate.getFullYear() === currentYear && 
             cDate.getMonth() === currentMonth) {
@@ -231,9 +233,9 @@ const App: React.FC = () => {
           );
       } else if (connectionStatus === 'offline') {
           return (
-            <span className="flex items-center gap-1.5 text-orange-500 text-[10px] font-bold bg-orange-50 px-3 py-1 rounded-full border border-orange-100 shadow-sm animate-in fade-in" title="無法連線到資料庫，目前使用本機模式">
-                <WifiOff size={12} /> 
-                Local Mode
+            <span className="flex items-center gap-1.5 text-red-500 text-[10px] font-bold bg-red-50 px-3 py-1 rounded-full border border-red-100 shadow-sm animate-in fade-in">
+                <CloudOff size={12} /> 
+                Offline
             </span>
           );
       } else {
@@ -247,10 +249,10 @@ const App: React.FC = () => {
   };
 
   // --- Render Sections ---
+  // (Rendering code remains largely same, just updated handler props)
 
   const renderHome = () => (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 animate-in fade-in duration-500 relative overflow-hidden">
-        {/* Decorative blobs */}
         <div className="absolute top-[-10%] left-[-10%] w-64 h-64 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
         <div className="absolute top-[-10%] right-[-10%] w-64 h-64 bg-[#ffa9c2] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
         <div className="absolute bottom-[-20%] left-[20%] w-80 h-80 bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
@@ -268,7 +270,6 @@ const App: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl relative z-10">
-            {/* Request Button */}
             <button 
                 onClick={() => {
                     if (isCommissionsOpen) {
@@ -299,7 +300,6 @@ const App: React.FC = () => {
                 </p>
             </button>
             
-            {/* Tracking Button */}
             <button 
                 onClick={() => setCurrentPage('tracking')}
                 className="group bg-white hover:bg-stone-50 border-4 border-stone-100 hover:border-pink-200 rounded-[2.5rem] p-8 text-left transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:shadow-pink-100"
@@ -406,7 +406,6 @@ const App: React.FC = () => {
 
   const renderTracking = () => (
     <div className="min-h-screen flex flex-col relative">
-      {/* Top Header */}
       <div className="pt-8 px-6 max-w-5xl mx-auto w-full">
          <div className="flex items-center justify-between mb-8 text-[#ff5c8d] opacity-90">
             <div className="flex items-center gap-3">
@@ -421,7 +420,6 @@ const App: React.FC = () => {
             
             {viewMode === 'admin' && (
                 <div className="flex items-center gap-3">
-                     {/* Commission Toggle Switch */}
                      <button
                         onClick={toggleCommissionStatus}
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition-all
@@ -429,7 +427,6 @@ const App: React.FC = () => {
                                 ? 'bg-green-100 text-green-600 border-green-200 hover:bg-green-200' 
                                 : 'bg-stone-200 text-stone-500 border-stone-300 hover:bg-stone-300'
                             }`}
-                        title={isCommissionsOpen ? "目前開放中 (點擊關閉)" : "目前關閉中 (點擊開放)"}
                      >
                         <Power size={14} />
                         {isCommissionsOpen ? '接單中' : '暫停中'}
@@ -442,7 +439,6 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* Intro / Stats */}
         <div className="mb-10 text-center sm:text-left sm:flex justify-between items-end animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="mb-8 sm:mb-0">
                 <h2 className="text-3xl font-bold text-[#ff5c8d] mb-3 tracking-tight">
@@ -482,7 +478,6 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        {/* Controls - Floating & Rounded */}
         <div className="flex flex-col md:flex-row gap-4 mb-10 sticky top-6 z-40 bg-[#fffafb]/90 p-4 -mx-4 md:mx-0 rounded-3xl border-2 border-white shadow-lg shadow-pink-100/50 backdrop-blur-md animate-in fade-in slide-in-from-bottom-4">
             <div className="relative flex-grow">
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-stone-400" size={20} />
@@ -518,7 +513,6 @@ const App: React.FC = () => {
             </div>
         </div>
 
-        {/* Add Form (Admin Only) */}
         {viewMode === 'admin' && isAdding && (
             <AddCommissionForm 
                 onAdd={handleAdd} 
@@ -528,7 +522,6 @@ const App: React.FC = () => {
             />
         )}
 
-        {/* Edit Form (Admin Only) */}
         {viewMode === 'admin' && editingCommission && (
             <EditCommissionForm 
                 commission={editingCommission} 
@@ -539,10 +532,8 @@ const App: React.FC = () => {
             />
         )}
 
-        {/* List */}
         <div className="space-y-6 pb-20">
             {!shouldShowList ? (
-                // Client Mode: No Search Yet
                 <div className="text-center py-20 opacity-70">
                     <div className="mx-auto w-20 h-20 bg-pink-50 rounded-full flex items-center justify-center mb-5 animate-[pulse_3s_ease-in-out_infinite]">
                         <Search className="text-pink-200" size={36} />
@@ -551,7 +542,6 @@ const App: React.FC = () => {
                     <p className="text-stone-400 mt-2 font-medium text-sm">請在上方搜尋欄輸入您的 ID 以查看進度</p>
                 </div>
             ) : filteredCommissions.length === 0 ? (
-                // Search resulted in empty
                 <div className="text-center py-24 bg-white rounded-3xl border-2 border-dashed border-stone-200">
                     <div className="mx-auto w-20 h-20 bg-stone-100 rounded-full flex items-center justify-center mb-4">
                         <Search className="text-stone-400" size={32} />
@@ -562,7 +552,6 @@ const App: React.FC = () => {
                     </p>
                 </div>
             ) : (
-                // Results List
                 filteredCommissions.map(commission => (
                     <CommissionCard 
                         key={commission.id}
@@ -577,12 +566,10 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Footer with Admin Switch */}
       <footer className="py-8 border-t border-stone-200 text-center mt-auto">
         <p className="text-stone-400 text-sm font-medium mb-4">
             © 2026 CommissionTrack
         </p>
-        
         <div className="flex justify-center">
             <button 
                 onClick={handleModeSwitchRequest}
@@ -603,7 +590,6 @@ const App: React.FC = () => {
       {currentPage === 'terms' && renderTerms()}
       {currentPage === 'request' && renderRequest()}
 
-      {/* Auth Modal */}
       {showAuthModal && (
         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl border-2 border-pink-100 animate-in zoom-in-95 duration-200">
@@ -651,7 +637,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Type Manager Modal */}
       {showTypeManager && (
           <TypeManager 
             types={commissionTypes}

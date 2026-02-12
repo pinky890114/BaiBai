@@ -58,7 +58,6 @@ if (isFirebaseConfigured) {
             db = getFirestore(app, DATABASE_ID);
         } catch (e) {
             console.warn("getFirestore 初始化失敗，嘗試 initializeFirestore", e);
-            // 備用方案：如果 getFirestore 失敗，嘗試 initializeFirestore
             try {
                 db = initializeFirestore(app, {}, DATABASE_ID);
             } catch (initError) {
@@ -109,7 +108,7 @@ export const subscribeToConnectionStatus = (callback: (status: ConnectionStatus)
     };
 };
 
-// --- LocalStorage Helpers (Fallback Mode / 本機模式) ---
+// --- LocalStorage Helpers (僅用於讀取備份或開發測試，不再用於寫入失敗的自動備案) ---
 const STORAGE_KEY_COMMISSIONS = 'arttrack_commissions_zh_v1';
 const STORAGE_KEY_SETTINGS = 'arttrack_settings_v1';
 
@@ -126,17 +125,6 @@ const getLocalCommissions = (): Commission[] => {
     }
 };
 
-// 安全的 LocalStorage 寫入 (防止 QuotaExceededError)
-const saveLocalCommissions = (data: Commission[]) => {
-    try {
-        localStorage.setItem(STORAGE_KEY_COMMISSIONS, JSON.stringify(data));
-        commissionListeners.forEach(cb => cb(data));
-    } catch (e) {
-        console.error("❌ LocalStorage 儲存失敗 (可能是空間不足):", e);
-        alert("⚠️ 瀏覽器儲存空間已滿，無法儲存部分資料。建議清除快取或刪除舊圖片。");
-    }
-};
-
 const getLocalSettings = (): GlobalSettings => {
     const stored = localStorage.getItem(STORAGE_KEY_SETTINGS);
     if (!stored) return { isOpen: true, types: DEFAULT_COMMISSION_TYPES };
@@ -147,37 +135,31 @@ const getLocalSettings = (): GlobalSettings => {
     }
 };
 
-const saveLocalSettings = (data: GlobalSettings) => {
-    try {
-        localStorage.setItem(STORAGE_KEY_SETTINGS, JSON.stringify(data));
-        settingsListeners.forEach(cb => cb(data));
-    } catch (e) {
-        console.error("❌ Settings 儲存失敗:", e);
-    }
-};
-
 // --- Error Handling Helper ---
 let hasLoggedError = false;
 
 const handleFirebaseError = (error: any) => {
-    notifyStatus('offline'); // Mark as offline on error
-    
-    // 只在 console 顯示一次詳細錯誤，避免洗版
+    notifyStatus('offline');
     if (!hasLoggedError) {
         console.warn("🔥 無法連線至 Firestore，已切換至本機模式 (Local Mode)。");
-        // 忽略 AbortError (通常是網路中斷或組件卸載)
         if (error?.name !== 'AbortError' && error?.code !== 'aborted') {
             console.error("詳細錯誤原因:", error);
         }
-        
-        if (error.code === 'not-found') {
-             console.warn(`💡 找不到資料庫。請確認 services/firebase.ts 中的 DATABASE_ID 是否正確。\n目前設定為: "${DATABASE_ID}"`);
-        } else if (error.code === 'permission-denied') {
-             console.error("🛑 權限不足 (Permission Denied)");
-             console.warn("💡 請確認 Firebase Rules 是否已設定為允許讀寫。");
-        }
         hasLoggedError = true;
     }
+};
+
+// --- Timeout Helper ---
+// 強制讓任何 Promise 在指定時間內結束，否則 Reject
+const withTimeout = <T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> => {
+    let timer: any;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(errorMessage)), ms);
+    });
+    return Promise.race([
+        promise.then(res => { clearTimeout(timer); return res; }),
+        timeoutPromise
+    ]);
 };
 
 // --- Service Functions ---
@@ -185,6 +167,7 @@ const handleFirebaseError = (error: any) => {
 /**
  * 圖片壓縮與上傳
  * 自動將圖片壓縮至最大邊長 1200px，品質 0.7 (JPEG)
+ * 加入 15 秒超時機制
  */
 export const uploadCommissionImage = async (file: File): Promise<string> => {
     // 壓縮 helper
@@ -193,106 +176,88 @@ export const uploadCommissionImage = async (file: File): Promise<string> => {
             const img = new Image();
             const reader = new FileReader();
 
-            reader.onload = (e) => {
-                img.src = e.target?.result as string;
-            };
-            reader.onerror = (e) => reject(new Error("FileReader failed"));
-            reader.onabort = () => reject(new Error("FileReader aborted"));
+            reader.onload = (e) => { img.src = e.target?.result as string; };
+            reader.onerror = () => reject(new Error("FileReader failed"));
+            
+            // 加入 FileReader 的安全超時 (防止壞檔讀取卡死)
+            setTimeout(() => reject(new Error("Image read timeout")), 5000);
 
             img.onload = () => {
                 const canvas = document.createElement('canvas');
                 let width = img.width;
                 let height = img.height;
-                
-                // 設定最大邊長，避免圖片過大 (例如限制在 1200px)
                 const MAX_SIZE = 1200;
 
                 if (width > height) {
-                    if (width > MAX_SIZE) {
-                        height *= MAX_SIZE / width;
-                        width = MAX_SIZE;
-                    }
+                    if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
                 } else {
-                    if (height > MAX_SIZE) {
-                        width *= MAX_SIZE / height;
-                        height = MAX_SIZE;
-                    }
+                    if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
                 }
 
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    reject(new Error("Canvas Context Error"));
-                    return;
-                }
+                if (!ctx) { reject(new Error("Canvas Context Error")); return; }
                 
-                // 繪製並重設大小
                 ctx.drawImage(img, 0, 0, width, height);
 
-                // 輸出壓縮後的 Blob (JPEG, 品質 0.7)
                 canvas.toBlob((blob) => {
-                    if (blob) {
-                        resolve(blob);
-                    } else {
-                        reject(new Error("Compression Failed"));
-                    }
+                    if (blob) resolve(blob);
+                    else reject(new Error("Compression Failed"));
                 }, 'image/jpeg', 0.7);
             };
-            
-            // 增加圖片載入錯誤處理
-            img.onerror = (e) => reject(new Error("Image load failed"));
+            img.onerror = () => reject(new Error("Image load failed"));
         });
     };
 
-    // Blob 轉 Base64 (給 Local 模式用)
     const blobToBase64 = (blob: Blob): Promise<string> => {
-        return new Promise((resolve, reject) => {
+        return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = reject;
             reader.readAsDataURL(blob);
         });
     };
 
     try {
-        console.log(`Original size: ${(file.size / 1024).toFixed(2)} KB`);
-        // 嘗試壓縮
+        // 1. 壓縮
         let blobToUpload: Blob;
         try {
-            blobToUpload = await compressImage(file);
-            console.log(`Compressed size: ${(blobToUpload.size / 1024).toFixed(2)} KB`);
-        } catch (compressError) {
-            console.warn("Image compression failed, using original file:", compressError);
-            blobToUpload = file; // 壓縮失敗則使用原圖
+            // 壓縮也限制時間
+            blobToUpload = await withTimeout(compressImage(file), 8000, "Compression timeout");
+            console.log(`Compressed: ${(blobToUpload.size / 1024).toFixed(2)} KB`);
+        } catch (e) {
+            console.warn("Compression failed/timed out, using original:", e);
+            blobToUpload = file;
         }
 
+        // 2. 上傳 (如果 storage 存在)
         if (storage) {
             try {
-                // 使用壓縮後的 Blob 上傳
                 const fileName = `commission_images/${Date.now()}_img.jpg`;
                 const storageRef = ref(storage, fileName);
                 
-                // uploadBytes 接受 Blob
-                const snapshot = await uploadBytes(storageRef, blobToUpload);
+                // 強制上傳必須在 15 秒內完成
+                const uploadTask = uploadBytes(storageRef, blobToUpload);
+                const snapshot = await withTimeout(uploadTask, 15000, "Storage upload timeout");
+                
                 const downloadURL = await getDownloadURL(snapshot.ref);
                 return downloadURL;
             } catch (error) {
-                console.error("☁️ Storage 上傳失敗 (可能網路不穩)，轉為 Base64 本地儲存:", error);
-                // 上傳失敗時，存 Base64 到 LocalStorage
+                console.error("☁️ Storage 上傳失敗，轉為 Base64 儲存 (資料將直接寫入文件)", error);
+                // 注意：這裡回傳 Base64 是可以的，因為這個字串會被存入 Firestore 的 thumbnailUrl 欄位
+                // 只要 addCommissionToCloud 成功，管理員就能看到圖片
                 return await blobToBase64(blobToUpload);
             }
         } else {
-            // 沒有 Storage 時，存 Base64 到 LocalStorage
             return await blobToBase64(blobToUpload);
         }
     } catch (e) {
-        console.error("Critical Image processing error:", e);
-        // 如果連壓縮或轉檔都完全失敗，嘗試回傳原始檔案的 Base64
+        console.error("Critical Image Error:", e);
+        // 最後一道防線：回傳原始檔案 Base64
         try {
-             return await blobToBase64(file);
-        } catch (finalError) {
-             return ""; // 真的沒辦法了
+            return await blobToBase64(file);
+        } catch {
+            return "";
         }
     }
 };
@@ -302,13 +267,11 @@ export const uploadCommissionImage = async (file: File): Promise<string> => {
  */
 export const subscribeToCommissions = (callback: (commissions: Commission[]) => void) => {
   if (db) {
-    // 雲端模式
     const q = query(collection(db, COMMISSIONS_COLLECTION), orderBy("dateAdded", "desc"));
-    
     let usingLocalListener = false;
 
     const unsubscribeFirestore = onSnapshot(q, (snapshot) => {
-      notifyStatus('connected'); // Success!
+      notifyStatus('connected');
       const commissions = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -316,29 +279,20 @@ export const subscribeToCommissions = (callback: (commissions: Commission[]) => 
       callback(commissions);
     }, (error) => {
       handleFirebaseError(error);
-      
-      // Fallback to local
       usingLocalListener = true;
-      if (!commissionListeners.includes(callback)) {
-          commissionListeners.push(callback);
-      }
+      if (!commissionListeners.includes(callback)) commissionListeners.push(callback);
       callback(getLocalCommissions());
     });
 
     return () => {
       unsubscribeFirestore();
-      if (usingLocalListener) {
-          commissionListeners = commissionListeners.filter(cb => cb !== callback);
-      }
+      if (usingLocalListener) commissionListeners = commissionListeners.filter(cb => cb !== callback);
     };
   } else {
-    // 本機模式 (未設定 API Key)
     notifyStatus('offline');
     commissionListeners.push(callback);
     callback(getLocalCommissions());
-    return () => {
-        commissionListeners = commissionListeners.filter(cb => cb !== callback);
-    };
+    return () => commissionListeners = commissionListeners.filter(cb => cb !== callback);
   }
 };
 
@@ -347,9 +301,7 @@ export const subscribeToCommissions = (callback: (commissions: Commission[]) => 
  */
 export const subscribeToSettings = (callback: (settings: GlobalSettings) => void) => {
   if (db) {
-    // 雲端模式
     const docRef = doc(db, SETTINGS_COLLECTION, GLOBAL_SETTINGS_DOC);
-    
     let usingLocalListener = false;
 
     const unsubscribeFirestore = onSnapshot(docRef, (docSnap) => {
@@ -357,112 +309,78 @@ export const subscribeToSettings = (callback: (settings: GlobalSettings) => void
         callback(docSnap.data() as GlobalSettings);
       } else {
         const defaultSettings: GlobalSettings = { isOpen: true, types: DEFAULT_COMMISSION_TYPES };
-        setDoc(docRef, defaultSettings).catch(e => console.warn("無法寫入初始設定:", e));
+        setDoc(docRef, defaultSettings).catch(e => console.warn("Init settings error:", e));
         callback(defaultSettings);
       }
     }, (error) => {
       handleFirebaseError(error);
-      
-      // Fallback to local
       usingLocalListener = true;
-      if (!settingsListeners.includes(callback)) {
-          settingsListeners.push(callback);
-      }
+      if (!settingsListeners.includes(callback)) settingsListeners.push(callback);
       callback(getLocalSettings());
     });
 
     return () => {
         unsubscribeFirestore();
-        if (usingLocalListener) {
-            settingsListeners = settingsListeners.filter(cb => cb !== callback);
-        }
+        if (usingLocalListener) settingsListeners = settingsListeners.filter(cb => cb !== callback);
     };
   } else {
-    // 本機模式
     settingsListeners.push(callback);
     callback(getLocalSettings());
-    return () => {
-        settingsListeners = settingsListeners.filter(cb => cb !== callback);
-    };
+    return () => settingsListeners = settingsListeners.filter(cb => cb !== callback);
   }
 };
 
 /**
- * 新增委託單
+ * 新增委託單 (嚴格模式：失敗則拋出錯誤)
  */
 export const addCommissionToCloud = async (commission: Commission) => {
-  // 即使 db 存在，如果目前狀態是 offline，也直接寫入 local
-  if (db && currentStatus === 'connected') {
-    try {
-      await setDoc(doc(db, COMMISSIONS_COLLECTION, commission.id), commission);
-    } catch (e) {
-      console.error("雲端新增失敗，切換至本地儲存: ", e);
-      // Fallback
-      const current = getLocalCommissions();
-      saveLocalCommissions([commission, ...current]);
-    }
-  } else {
-    const current = getLocalCommissions();
-    saveLocalCommissions([commission, ...current]);
+  if (!db) {
+      throw new Error("無法連線到資料庫 (Offline)");
   }
+  
+  // 增加超時時間至 15秒
+  await withTimeout(
+      setDoc(doc(db, COMMISSIONS_COLLECTION, commission.id), commission),
+      15000,
+      "Firestore write timeout (15s)"
+  );
 };
 
 /**
  * 更新委託單
  */
 export const updateCommissionInCloud = async (commission: Commission) => {
-  if (db && currentStatus === 'connected') {
-    try {
-      const docRef = doc(db, COMMISSIONS_COLLECTION, commission.id);
-      await updateDoc(docRef, { ...commission });
-    } catch (e) {
-      console.error("雲端更新失敗，切換至本地儲存: ", e);
-      const current = getLocalCommissions();
-      const updated = current.map(c => c.id === commission.id ? commission : c);
-      saveLocalCommissions(updated);
-    }
-  } else {
-    const current = getLocalCommissions();
-    const updated = current.map(c => c.id === commission.id ? commission : c);
-    saveLocalCommissions(updated);
+  if (!db) {
+      throw new Error("無法連線到資料庫 (Offline)");
   }
+
+  const docRef = doc(db, COMMISSIONS_COLLECTION, commission.id);
+  await withTimeout(updateDoc(docRef, { ...commission }), 15000, "Update timeout");
 };
 
 /**
  * 刪除委託單
  */
 export const deleteCommissionFromCloud = async (id: string) => {
-  if (db && currentStatus === 'connected') {
-    try {
-      await deleteDoc(doc(db, COMMISSIONS_COLLECTION, id));
-    } catch (e) {
-      console.error("雲端刪除失敗，切換至本地儲存: ", e);
-      const current = getLocalCommissions();
-      const updated = current.filter(c => c.id !== id);
-      saveLocalCommissions(updated);
-    }
-  } else {
-    const current = getLocalCommissions();
-    const updated = current.filter(c => c.id !== id);
-    saveLocalCommissions(updated);
+  if (!db) {
+      throw new Error("無法連線到資料庫 (Offline)");
   }
+  await withTimeout(deleteDoc(doc(db, COMMISSIONS_COLLECTION, id)), 15000, "Delete timeout");
 };
 
 /**
  * 更新全域設定
  */
 export const updateGlobalSettings = async (settings: Partial<GlobalSettings>) => {
-  if (db && currentStatus === 'connected') {
-    try {
+  if (!db) {
+     console.warn("Offline: Cannot update settings to cloud");
+     return;
+  }
+  
+  try {
       const docRef = doc(db, SETTINGS_COLLECTION, GLOBAL_SETTINGS_DOC);
-      await setDoc(docRef, settings, { merge: true });
-    } catch (e) {
-       console.error("雲端設定更新失敗，切換至本地儲存: ", e);
-       const current = getLocalSettings();
-       saveLocalSettings({ ...current, ...settings });
-    }
-  } else {
-    const current = getLocalSettings();
-    saveLocalSettings({ ...current, ...settings });
+      await withTimeout(setDoc(docRef, settings, { merge: true }), 10000, "Settings update timeout");
+  } catch(e) {
+      console.error("Failed to update settings", e);
   }
 };

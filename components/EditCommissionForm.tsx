@@ -5,7 +5,7 @@ import { uploadCommissionImage } from '../services/firebase';
 
 interface EditCommissionFormProps {
   commission: Commission;
-  onSave: (updated: Commission) => void;
+  onSave: (updated: Commission) => Promise<void>;
   onCancel: () => void;
   availableTypes: CommissionType[];
   onManageTypes: () => void;
@@ -55,22 +55,22 @@ export const EditCommissionForm: React.FC<EditCommissionFormProps> = ({ commissi
     setIsSubmitting(true);
     let finalImageUrl = formData.thumbnailUrl;
 
-    if (selectedFile) {
-        try {
+    try {
+        if (selectedFile) {
             finalImageUrl = await uploadCommissionImage(selectedFile);
-        } catch (error) {
-            alert("圖片上傳失敗，請重試");
-            setIsSubmitting(false);
-            return;
         }
-    }
 
-    onSave({
-        ...formData,
-        thumbnailUrl: finalImageUrl || '',
-        lastUpdated: new Date().toISOString().split('T')[0]
-    });
-    // Parent handles closing, so we don't strictly need to setIsSubmitting(false) here, but good practice.
+        await onSave({
+            ...formData,
+            thumbnailUrl: finalImageUrl || '',
+            lastUpdated: new Date().toISOString().split('T')[0]
+        });
+        // Parent handles closing on success, we stay here if error thrown
+    } catch (error) {
+        console.error("Edit save error:", error);
+        alert("儲存失敗！請檢查網路連線。" + (error instanceof Error ? error.message : ""));
+        setIsSubmitting(false); // Only reset if failed
+    }
   };
 
   return (
