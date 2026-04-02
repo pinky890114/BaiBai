@@ -48,11 +48,17 @@ const App: React.FC = () => {
   // Connection State
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize Data (Subscribe to Firebase)
   useEffect(() => {
+    const handleCustomAlert = (e: CustomEvent) => {
+        setErrorMessage(e.detail);
+    };
+    window.addEventListener('custom-alert', handleCustomAlert as EventListener);
+
     // 1. Subscribe to Commissions
     const unsubscribeCommissions = subscribeToCommissions((data) => {
       setCommissions(data);
@@ -76,6 +82,7 @@ const App: React.FC = () => {
     });
 
     return () => {
+      window.removeEventListener('custom-alert', handleCustomAlert as EventListener);
       unsubscribeCommissions();
       unsubscribeSettings();
       unsubscribeStatus();
